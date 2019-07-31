@@ -1,9 +1,31 @@
 use spidev::{Spidev, SpiModeFlags, SpidevTransfer, SpidevOptions};
-use std::io::Read;
+use std::io::{Read, Write};
 use structopt::StructOpt;
+
+enum OutputFormat {
+	Decimal,
+	Hexadecimal,
+	Raw,
+}
+
+impl std::str::FromStr for OutputFormat {
+	type Err = String;
+
+	fn from_str(value: &str) -> Result<Self, String> {
+		let lower = value.to_lowercase();
+		match lower.as_str() {
+			"raw"                 => Ok(OutputFormat::Raw),
+			"hex" | "hexadecimal" => Ok(OutputFormat::Hexadecimal),
+			"dec" | "decimal"     => Ok(OutputFormat::Decimal),
+			_ => Err(format!("invalid output format, allowed values are: raw, hex or dec, got: {}", value)),
+		}
+	}
+}
 
 #[derive(StructOpt)]
 #[structopt(author = "Fusion Engineering")]
+#[structopt(raw(setting = "structopt::clap::AppSettings::ColoredHelp"))]
+#[structopt(raw(setting = "structopt::clap::AppSettings::DeriveDisplayOrder"))]
 struct Options {
 	/// The spidev to open.
 	#[structopt(value_name = "SPIDEV")]
@@ -22,9 +44,10 @@ struct Options {
 	#[structopt(default_value = "1")]
 	repeat: usize,
 
-	/// Print the received response in hexadecimal.
-	#[structopt(long = "hex", short = "x")]
-	hex: bool,
+	/// Print the response in the given format: raw, hex[adecimal] or dec[imal].
+	#[structopt(long = "format", short = "f")]
+	#[structopt(default_value = "hex")]
+	format: OutputFormat,
 
 	/// Bits per word for the SPI transaction.
 	#[structopt(long = "bits")]
@@ -58,7 +81,7 @@ fn main() -> std::io::Result<()> {
 	rx_buf.resize(tx_buf.len(), 0u8);
 
 	for _ in 0..options.repeat {
-
+		// If we have a pre-delay, add a dummy write with delay_usecs and cs_change = 0.
 		if let Some(pre_delay) = options.pre_delay {
 			let mut transfers = [
 				SpidevTransfer::write(&[]),
@@ -70,16 +93,38 @@ fn main() -> std::io::Result<()> {
 			transfers[0].speed_hz    = options.speed;
 			transfers[1].speed_hz    = options.speed;
 			spi.transfer_multiple(&mut transfers)?;
+
+		// Else just do the single transfer.
 		} else {
 			let mut transfer  = SpidevTransfer::read_write(&tx_buf, &mut rx_buf);
 			transfer.speed_hz = options.speed;
 			spi.transfer(&mut transfer)?;
 		}
 
-		if options.hex {
-			println!("{:02X?}", rx_buf);
-		} else {
-			println!("{:?}", rx_buf);
+		// Print the received data in the desired format.
+		match options.format {
+			OutputFormat::Raw => {
+				let mut stdout = std::io::stdout();
+				stdout.write_all(&rx_buf)?;
+			},
+			OutputFormat::Hexadecimal => {
+				for (i, byte) in rx_buf.iter().enumerate() {
+					if i != 0 {
+						print!(" ");
+					}
+					print!("{:02X}", byte);
+				}
+				println!();
+			},
+			OutputFormat::Decimal => {
+				for (i, byte) in rx_buf.iter().enumerate() {
+					if i != 0 {
+						print!(" ");
+					}
+					print!("{}", byte);
+				}
+				println!();
+			},
 		}
 	}
 
