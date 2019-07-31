@@ -74,41 +74,58 @@ struct Options {
 	pre_delay: Option<u16>,
 }
 
-fn main() -> std::io::Result<()> {
-	let options = Options::from_args();
+fn main() {
+	do_main(Options::from_args()).unwrap_or_else(|error| {
+		eprintln!("Error: {}", error);
+		std::process::exit(1);
+	});
+}
 
+fn do_main(options: Options) -> Result<(), String> {
 	let stdin  = std::io::stdin();
 	let stdout = std::io::stdout();
 
-	let mut spi = Spidev::open(&options.spidev)?;
+	let mut spi = Spidev::open(&options.spidev)
+		.map_err(|e| format!("Failed to open spidev {}: {}", options.spidev.display(), e))?;
 	spi.configure(&SpidevOptions::new()
 		.bits_per_word(options.bits_per_word)
 		.max_speed_hz(options.speed)
 		.mode(SpiModeFlags::SPI_MODE_0)
 		.build()
-	)?;
+	).map_err(|e| format!("Failed to configure spidev: {}", e))?;
 
 	let mut input : Box<dyn Read> = if options.input == Path::new("-") {
 		Box::new(stdin.lock())
 	} else {
-		Box::new(std::fs::File::open(&options.input)?)
+		Box::new(std::fs::File::open(&options.input)
+			.map_err(|e| format!("Failed to open input file {}: {}", options.input.display(), e))?
+		)
 	};
 
 	let mut output : Box<dyn Write> = if options.output == Path::new("-") {
 		Box::new(stdout.lock())
 	} else {
-		// Unlink file before opening, but ignore errors.
-		// Then create a new file (fail if it still exists).
-		let _ = std::fs::remove_file(&options.output);
+		// Unlink file before opening, but ignore ENOENT.
+		std::fs::remove_file(&options.output).or_else(|e| {
+			if e.kind() == std::io::ErrorKind::NotFound {
+				Ok(())
+			} else {
+				Err(format!("Failed to unlink existing output file: {}: {}", options.output.display(), e))
+			}
+		})?;
+		// Then create the file, and fail if it already exists.
 		Box::new(std::fs::OpenOptions::new()
 			.write(true)
 			.create_new(true)
-			.open(&options.output)?
+			.open(&options.output)
+			.map_err(|e| format!("Failed to create output file {}: {}", options.output.display(), e))?
 		)
 	};
 
 	let mut tx_buf = Vec::new();
-	input.read_to_end(&mut tx_buf)?;
+	input.read_to_end(&mut tx_buf)
+		.map_err(|e| format!("Failed to read input message: {}", e))?;
+
 	let mut rx_buf = Vec::new();
 	rx_buf.resize(tx_buf.len(), 0u8);
 
@@ -124,37 +141,39 @@ fn main() -> std::io::Result<()> {
 			transfers[0].delay_usecs = pre_delay;
 			transfers[0].speed_hz    = options.speed;
 			transfers[1].speed_hz    = options.speed;
-			spi.transfer_multiple(&mut transfers)?;
+			spi.transfer_multiple(&mut transfers)
+				.map_err(|e| format!("SPI transaction failed: {}", e))?;
 
 		// Else just do the single transfer.
 		} else {
 			let mut transfer  = SpidevTransfer::read_write(&tx_buf, &mut rx_buf);
 			transfer.speed_hz = options.speed;
-			spi.transfer(&mut transfer)?;
+			spi.transfer(&mut transfer)
+				.map_err(|e| format!("SPI transaction failed: {}", e))?;
 		}
 
 		// Print the received data in the desired format.
 		match options.format {
 			OutputFormat::Raw => {
-				output.write_all(&rx_buf)?;
+				output.write_all(&rx_buf).map_err(|e| format!("Failed to write to output stream: {}", e))?;
 			},
 			OutputFormat::Hexadecimal => {
 				for (i, byte) in rx_buf.iter().enumerate() {
 					if i != 0 {
-						write!(output, " ")?;
+						write!(output, " ").map_err(|e| format!("Failed to write to output stream: {}", e))?;
 					}
-					write!(output, "{:02X}", byte)?;
+					write!(output, "{:02X}", byte).map_err(|e| format!("Failed to write to output stream: {}", e))?;
 				}
-				writeln!(output)?;
+				writeln!(output).map_err(|e| format!("Failed to write to output stream: {}", e))?;
 			},
 			OutputFormat::Decimal => {
 				for (i, byte) in rx_buf.iter().enumerate() {
 					if i != 0 {
-						write!(output, " ")?;
+						write!(output, " ").map_err(|e| format!("Failed to write to output stream: {}", e))?;
 					}
-					write!(output, "{}", byte)?;
+					write!(output, "{}", byte).map_err(|e| format!("Failed to write to output stream: {}", e))?;
 				}
-				writeln!(output)?;
+				writeln!(output).map_err(|e| format!("Failed to write to output stream: {}", e))?;
 			},
 		}
 	}
