@@ -1,5 +1,6 @@
 use spidev::{Spidev, SpiModeFlags, SpidevTransfer, SpidevOptions};
 use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
 enum OutputFormat {
@@ -29,7 +30,19 @@ impl std::str::FromStr for OutputFormat {
 struct Options {
 	/// The spidev to open.
 	#[structopt(value_name = "SPIDEV")]
-	spidev: std::path::PathBuf,
+	spidev: PathBuf,
+
+	/// Read input from a file, or - for standard input.
+	#[structopt(long = "in", short = "i")]
+	#[structopt(value_name = "PATH")]
+	#[structopt(default_value = "-")]
+	input: PathBuf,
+
+	/// Write output to a file, or - for standard output.
+	#[structopt(long = "out", short = "o")]
+	#[structopt(value_name = "PATH")]
+	#[structopt(default_value = "-")]
+	output: PathBuf,
 
 	/// The speed in Hz for the SPI transaction.
 	#[structopt(long = "speed", short = "s")]
@@ -64,19 +77,38 @@ struct Options {
 fn main() -> std::io::Result<()> {
 	let options = Options::from_args();
 
-	let spi_options = SpidevOptions::new()
+	let stdin  = std::io::stdin();
+	let stdout = std::io::stdout();
+
+	let mut spi = Spidev::open(&options.spidev)?;
+	spi.configure(&SpidevOptions::new()
 		.bits_per_word(options.bits_per_word)
 		.max_speed_hz(options.speed)
 		.mode(SpiModeFlags::SPI_MODE_0)
-		.build();
+		.build()
+	)?;
 
-	let mut spi = Spidev::open(&options.spidev)?;
-	spi.configure(&spi_options)?;
+	let mut input : Box<dyn Read> = if options.input == Path::new("-") {
+		Box::new(stdin.lock())
+	} else {
+		Box::new(std::fs::File::open(&options.input)?)
+	};
 
-	let stdin = std::io::stdin();
-	let mut stdin = stdin.lock();
+	let mut output : Box<dyn Write> = if options.output == Path::new("-") {
+		Box::new(stdout.lock())
+	} else {
+		// Unlink file before opening, but ignore errors.
+		// Then create a new file (fail if it still exists).
+		let _ = std::fs::remove_file(&options.output);
+		Box::new(std::fs::OpenOptions::new()
+			.write(true)
+			.create_new(true)
+			.open(&options.output)?
+		)
+	};
+
 	let mut tx_buf = Vec::new();
-	stdin.read_to_end(&mut tx_buf)?;
+	input.read_to_end(&mut tx_buf)?;
 	let mut rx_buf = Vec::new();
 	rx_buf.resize(tx_buf.len(), 0u8);
 
@@ -104,26 +136,25 @@ fn main() -> std::io::Result<()> {
 		// Print the received data in the desired format.
 		match options.format {
 			OutputFormat::Raw => {
-				let mut stdout = std::io::stdout();
-				stdout.write_all(&rx_buf)?;
+				output.write_all(&rx_buf)?;
 			},
 			OutputFormat::Hexadecimal => {
 				for (i, byte) in rx_buf.iter().enumerate() {
 					if i != 0 {
-						print!(" ");
+						write!(output, " ")?;
 					}
-					print!("{:02X}", byte);
+					write!(output, "{:02X}", byte)?;
 				}
-				println!();
+				writeln!(output)?;
 			},
 			OutputFormat::Decimal => {
 				for (i, byte) in rx_buf.iter().enumerate() {
 					if i != 0 {
-						print!(" ");
+						write!(output, " ")?;
 					}
-					print!("{}", byte);
+					write!(output, "{}", byte)?;
 				}
-				println!();
+				writeln!(output)?;
 			},
 		}
 	}
