@@ -1,7 +1,7 @@
 [package]
-name = "spi-test"
+name = "spicat"
 version = "0.1.0"
-authors = ["Maarten de Vries <maarten@de-vri.es>"]
+authors = ["Fusion Engineering", "Maarten de Vries <maarten@de-vri.es>"]
 edition = "2018"
 
 [dependencies]
