@@ -2,6 +2,7 @@ use spidev::{Spidev, SpiModeFlags, SpidevTransfer, SpidevOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
+use std::os::unix::io::AsRawFd;
 
 enum OutputFormat {
 	Decimal,
@@ -58,9 +59,10 @@ struct Options {
 	repeat: usize,
 
 	/// Print the response in the given format: raw, hex[adecimal] or dec[imal].
+	/// If not specified, the output format depends on whether output if going to a TTY.
+	/// If it is, hex is used by default, otherwise raw is used.
 	#[structopt(long = "format", short = "f")]
-	#[structopt(default_value = "hex")]
-	format: OutputFormat,
+	format: Option<OutputFormat>,
 
 	/// Bits per word for the SPI transaction.
 	#[structopt(long = "bits")]
@@ -87,6 +89,7 @@ fn do_main(options: Options) -> Result<(), String> {
 
 	let mut spi = Spidev::open(&options.spidev)
 		.map_err(|e| format!("Failed to open spidev {}: {}", options.spidev.display(), e))?;
+
 	spi.configure(&SpidevOptions::new()
 		.bits_per_word(options.bits_per_word)
 		.max_speed_hz(options.speed)
@@ -102,8 +105,11 @@ fn do_main(options: Options) -> Result<(), String> {
 		)
 	};
 
+	let output_fd: i32;
 	let mut output : Box<dyn Write> = if options.output == Path::new("-") {
-		Box::new(stdout.lock())
+		let stdout = stdout.lock();
+		output_fd = stdout.as_raw_fd();
+		Box::new(stdout)
 	} else {
 		// Unlink file before opening, but ignore ENOENT.
 		std::fs::remove_file(&options.output).or_else(|e| {
@@ -114,12 +120,13 @@ fn do_main(options: Options) -> Result<(), String> {
 			}
 		})?;
 		// Then create the file, and fail if it already exists.
-		Box::new(std::fs::OpenOptions::new()
+		let file = std::fs::OpenOptions::new()
 			.write(true)
 			.create_new(true)
 			.open(&options.output)
-			.map_err(|e| format!("Failed to create output file {}: {}", options.output.display(), e))?
-		)
+			.map_err(|e| format!("Failed to create output file {}: {}", options.output.display(), e))?;
+		output_fd = file.as_raw_fd();
+		Box::new(file)
 	};
 
 	let mut tx_buf = Vec::new();
@@ -128,6 +135,14 @@ fn do_main(options: Options) -> Result<(), String> {
 
 	let mut rx_buf = Vec::new();
 	rx_buf.resize(tx_buf.len(), 0u8);
+
+	let format = options.format.unwrap_or_else(|| {
+		if unsafe { libc::isatty(output_fd) } != 0 {
+			OutputFormat::Hexadecimal
+		} else {
+			OutputFormat::Raw
+		}
+	});
 
 	for _ in 0..options.repeat {
 		// If we have a pre-delay, add a dummy write with delay_usecs and cs_change = 0.
@@ -152,8 +167,9 @@ fn do_main(options: Options) -> Result<(), String> {
 				.map_err(|e| format!("SPI transaction failed: {}", e))?;
 		}
 
+
 		// Print the received data in the desired format.
-		match options.format {
+		match format {
 			OutputFormat::Raw => {
 				output.write_all(&rx_buf).map_err(|e| format!("Failed to write to output stream: {}", e))?;
 			},

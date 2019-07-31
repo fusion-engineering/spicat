@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 spidev = "0.4"
 structopt = "0.2.18"
+libc = "0.2.60"
