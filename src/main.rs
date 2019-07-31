@@ -31,6 +31,11 @@ struct Options {
 	#[structopt(value_name = "N")]
 	#[structopt(default_value = "8")]
 	bits_per_word: u8,
+
+	/// Delay in microseconds after enabling the chip select line before sending data.
+	#[structopt(long = "pre_delay")]
+	#[structopt(value_name = "MICROSECONDS")]
+	pre_delay: Option<u16>,
 }
 
 fn main() -> std::io::Result<()> {
@@ -53,9 +58,24 @@ fn main() -> std::io::Result<()> {
 	rx_buf.resize(tx_buf.len(), 0u8);
 
 	for _ in 0..options.repeat {
-		let mut transfer = SpidevTransfer::read_write(&tx_buf, &mut rx_buf);
-		transfer.speed_hz = options.speed;
-		spi.transfer(&mut transfer)?;
+
+		if let Some(pre_delay) = options.pre_delay {
+			let mut transfers = [
+				SpidevTransfer::write(&[]),
+				SpidevTransfer::read_write(&tx_buf, &mut rx_buf),
+			];
+
+			transfers[0].cs_change   = 0;
+			transfers[0].delay_usecs = pre_delay;
+			transfers[0].speed_hz    = options.speed;
+			transfers[1].speed_hz    = options.speed;
+			spi.transfer_multiple(&mut transfers)?;
+		} else {
+			let mut transfer  = SpidevTransfer::read_write(&tx_buf, &mut rx_buf);
+			transfer.speed_hz = options.speed;
+			spi.transfer(&mut transfer)?;
+		}
+
 		if options.hex {
 			println!("{:02X?}", rx_buf);
 		} else {
