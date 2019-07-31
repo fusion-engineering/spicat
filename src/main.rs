@@ -12,7 +12,7 @@ struct Options {
 	/// The speed in Hz for the SPI transaction.
 	#[structopt(long = "speed", short = "s")]
 	#[structopt(value_name = "HZ")]
-	#[structopt(default_value = "1_000_000")]
+	#[structopt(default_value = "1000000")]
 	speed: u32,
 
 	/// Repeat the transaction COUNT times,
