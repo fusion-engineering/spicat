@@ -111,19 +111,7 @@ fn do_main(options: Options) -> Result<(), String> {
 		output_fd = stdout.as_raw_fd();
 		Box::new(stdout)
 	} else {
-		// Unlink file before opening, but ignore ENOENT.
-		std::fs::remove_file(&options.output).or_else(|e| {
-			if e.kind() == std::io::ErrorKind::NotFound {
-				Ok(())
-			} else {
-				Err(format!("Failed to unlink existing output file: {}: {}", options.output.display(), e))
-			}
-		})?;
-		// Then create the file, and fail if it already exists.
-		let file = std::fs::OpenOptions::new()
-			.write(true)
-			.create_new(true)
-			.open(&options.output)
+		let file = std::fs::File::create(&options.output)
 			.map_err(|e| format!("Failed to create output file {}: {}", options.output.display(), e))?;
 		output_fd = file.as_raw_fd();
 		Box::new(file)
