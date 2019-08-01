@@ -14,3 +14,6 @@ edition = "2018"
 spidev = "0.4"
 structopt = "0.2.18"
 libc = "0.2.60"
+
+[badges]
+travis-ci = { repository = "fusion-engineering/spicat", branch = "master" }
