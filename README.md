@@ -29,3 +29,6 @@ Note that this wait time is implemented by the Linux kernel,
 which may mean the exact delay can be a few microseconds longer than the requested value.
 
 See `spicat --help` for a list of every available option.
+
+## Install
+Run `cargo install spicat` to install the tool with cargo.
