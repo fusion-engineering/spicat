@@ -55,6 +55,38 @@ impl std::str::FromStr for OutputFormat {
 	}
 }
 
+enum SpiMode {
+	M0,
+	M1,
+	M2,
+	M3,
+}
+
+impl std::str::FromStr for SpiMode {
+	type Err = String;
+
+	fn from_str(value: &str) -> Result<Self, String> {
+		match value {
+			"0" => Ok(SpiMode::M0),
+			"1" => Ok(SpiMode::M1),
+			"2" => Ok(SpiMode::M2),
+			"3" => Ok(SpiMode::M3),
+			_ => Err(format!("invalid output format, allowed values are: raw, hex or dec, got: {}", value)),
+		}
+	}
+}
+
+impl SpiMode {
+	fn flags(&self) -> SpiModeFlags {
+		match *self {
+			SpiMode::M0 => SpiModeFlags::SPI_MODE_0,
+			SpiMode::M1 => SpiModeFlags::SPI_MODE_1,
+			SpiMode::M2 => SpiModeFlags::SPI_MODE_2,
+			SpiMode::M3 => SpiModeFlags::SPI_MODE_3,
+		}
+	}
+}
+
 #[derive(StructOpt)]
 #[structopt(author = "Fusion Engineering")]
 #[structopt(raw(setting = "structopt::clap::AppSettings::ColoredHelp"))]
@@ -95,6 +127,12 @@ struct Options {
 	#[structopt(long = "format", short = "f")]
 	format: Option<OutputFormat>,
 
+	/// SPI mode to use: 0, 1, 2 or 3.
+	#[structopt(long = "--mode")]
+	#[structopt(value_name = "MODE")]
+	#[structopt(default_value = "0")]
+	spi_mode: SpiMode,
+
 	/// Bits per word for the SPI transaction.
 	#[structopt(long = "bits")]
 	#[structopt(value_name = "N")]
@@ -124,7 +162,7 @@ fn do_main(options: Options) -> Result<(), String> {
 	spi.configure(&SpidevOptions::new()
 		.bits_per_word(options.bits_per_word)
 		.max_speed_hz(options.speed)
-		.mode(SpiModeFlags::SPI_MODE_0)
+		.mode(options.spi_mode.flags())
 		.build()
 	).map_err(|e| format!("Failed to configure spidev: {}", e))?;
 
