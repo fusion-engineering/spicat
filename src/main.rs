@@ -55,11 +55,13 @@ impl std::str::FromStr for OutputFormat {
 	}
 }
 
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum SpiMode {
-	M0,
-	M1,
-	M2,
-	M3,
+	M0 = 0,
+	M1 = 1,
+	M2 = 2,
+	M3 = 3,
 }
 
 impl std::str::FromStr for SpiMode {
@@ -131,7 +133,7 @@ struct Options {
 	#[structopt(long = "--mode")]
 	#[structopt(value_name = "MODE")]
 	#[structopt(default_value = "0")]
-	spi_mode: SpiMode,
+	mode: SpiMode,
 
 	/// Bits per word for the SPI transaction.
 	#[structopt(long = "bits")]
@@ -158,13 +160,13 @@ fn do_main(options: Options) -> Result<(), String> {
 
 	let mut spi = Spidev::open(&options.spidev)
 		.map_err(|e| format!("Failed to open spidev {}: {}", options.spidev.display(), e))?;
+	spi.configure(&SpidevOptions::new().bits_per_word(options.bits_per_word).build())
+		.map_err(|e| format!("Failed to set {} bits per word: {}", options.bits_per_word, e))?;
+	spi.configure(&SpidevOptions::new().max_speed_hz(options.speed).build())
+		.map_err(|e| format!("Failed to max speed to {} Hz: {}", options.speed, e))?;
+	spi.configure(&SpidevOptions::new().mode(options.mode.flags()).build())
+		.map_err(|e| format!("Failed to set SPI mode to {}: {}", options.mode as u8, e))?;
 
-	spi.configure(&SpidevOptions::new()
-		.bits_per_word(options.bits_per_word)
-		.max_speed_hz(options.speed)
-		.mode(options.spi_mode.flags())
-		.build()
-	).map_err(|e| format!("Failed to configure spidev: {}", e))?;
 
 	let mut input : Box<dyn Read> = if options.input == Path::new("-") {
 		Box::new(stdin.lock())
