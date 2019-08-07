@@ -64,6 +64,17 @@ enum SpiMode {
 	M3 = 3,
 }
 
+impl SpiMode {
+	fn flags(&self) -> SpiModeFlags {
+		match *self {
+			SpiMode::M0 => SpiModeFlags::SPI_MODE_0,
+			SpiMode::M1 => SpiModeFlags::SPI_MODE_1,
+			SpiMode::M2 => SpiModeFlags::SPI_MODE_2,
+			SpiMode::M3 => SpiModeFlags::SPI_MODE_3,
+		}
+	}
+}
+
 impl std::str::FromStr for SpiMode {
 	type Err = String;
 
@@ -78,13 +89,43 @@ impl std::str::FromStr for SpiMode {
 	}
 }
 
-impl SpiMode {
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum ChipSelect {
+	ActiveLow,
+	ActiveHigh,
+	Disabled,
+}
+
+impl ChipSelect {
 	fn flags(&self) -> SpiModeFlags {
 		match *self {
-			SpiMode::M0 => SpiModeFlags::SPI_MODE_0,
-			SpiMode::M1 => SpiModeFlags::SPI_MODE_1,
-			SpiMode::M2 => SpiModeFlags::SPI_MODE_2,
-			SpiMode::M3 => SpiModeFlags::SPI_MODE_3,
+			ChipSelect::ActiveLow  => SpiModeFlags::empty(),
+			ChipSelect::ActiveHigh => SpiModeFlags::SPI_CS_HIGH,
+			ChipSelect::Disabled   => SpiModeFlags::SPI_NO_CS,
+		}
+	}
+}
+
+impl std::str::FromStr for ChipSelect {
+	type Err = String;
+
+	fn from_str(value: &str) -> Result<Self, String> {
+		match value.to_lowercase().as_str() {
+			"active-low"  => Ok(ChipSelect::ActiveLow),
+			"active-high" => Ok(ChipSelect::ActiveHigh),
+			"disabled"    => Ok(ChipSelect::Disabled),
+			_ => Err(format!("invalid chip select mode, allowed values are: active-low, active-high or disabled, got: {}", value)),
+		}
+	}
+}
+
+impl std::fmt::Display for ChipSelect {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		match self {
+			ChipSelect::ActiveLow  => write!(f, "active low"),
+			ChipSelect::ActiveHigh => write!(f, "active high"),
+			ChipSelect::Disabled   => write!(f, "disabled"),
 		}
 	}
 }
@@ -130,10 +171,15 @@ struct Options {
 	format: Option<OutputFormat>,
 
 	/// SPI mode to use: 0, 1, 2 or 3.
-	#[structopt(long = "--mode")]
+	#[structopt(long = "mode")]
 	#[structopt(value_name = "MODE")]
 	#[structopt(default_value = "0")]
 	mode: SpiMode,
+
+	/// Chip select mode: active-low, active-high or disabled.
+	#[structopt(long = "chip-select")]
+	#[structopt(default_value = "active-low")]
+	chip_select: ChipSelect,
 
 	/// Bits per word for the SPI transaction.
 	#[structopt(long = "bits")]
@@ -142,7 +188,7 @@ struct Options {
 	bits_per_word: u8,
 
 	/// Delay in microseconds after enabling the chip select line before sending data.
-	#[structopt(long = "pre_delay")]
+	#[structopt(long = "pre-delay")]
 	#[structopt(value_name = "MICROSECONDS")]
 	pre_delay: Option<u16>,
 }
@@ -166,6 +212,8 @@ fn do_main(options: Options) -> Result<(), String> {
 		.map_err(|e| format!("Failed to max speed to {} Hz: {}", options.speed, e))?;
 	spi.configure(&SpidevOptions::new().mode(options.mode.flags()).build())
 		.map_err(|e| format!("Failed to set SPI mode to {}: {}", options.mode as u8, e))?;
+	spi.configure(&SpidevOptions::new().mode(options.chip_select.flags()).build())
+		.map_err(|e| format!("Failed to set chip select mode to {}: {}", options.chip_select, e))?;
 
 
 	let mut input : Box<dyn Read> = if options.input == Path::new("-") {
