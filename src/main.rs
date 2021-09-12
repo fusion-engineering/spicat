@@ -132,8 +132,8 @@ impl std::fmt::Display for ChipSelect {
 
 #[derive(StructOpt)]
 #[structopt(author = "Fusion Engineering")]
-#[structopt(raw(setting = "structopt::clap::AppSettings::ColoredHelp"))]
-#[structopt(raw(setting = "structopt::clap::AppSettings::DeriveDisplayOrder"))]
+#[structopt(setting = structopt::clap::AppSettings::ColoredHelp)]
+#[structopt(setting = structopt::clap::AppSettings::DeriveDisplayOrder)]
 struct Options {
 	/// The spidev to open.
 	#[structopt(value_name = "SPIDEV")]

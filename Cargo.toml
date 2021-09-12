@@ -14,7 +14,7 @@ categories = ["command-line-utilities", "embedded"]
 
 [dependencies]
 spidev = "0.4"
-structopt = "0.2.18"
+structopt = "0.3.23"
 libc = "0.2.60"
 
 [badges]
