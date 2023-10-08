@@ -32,65 +32,48 @@
 use spidev::{Spidev, SpiModeFlags, SpidevTransfer, SpidevOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use structopt::StructOpt;
 use std::os::unix::io::AsRawFd;
 
+#[derive(Debug, Copy, Clone)]
+#[derive(clap::ValueEnum)]
 enum OutputFormat {
+	#[clap(name = "dec")]
+	#[clap(alias = "decimal")]
 	Decimal,
+	#[clap(name = "hex")]
+	#[clap(alias = "hexadecimal")]
 	Hexadecimal,
 	Raw,
 }
 
-impl std::str::FromStr for OutputFormat {
-	type Err = String;
-
-	fn from_str(value: &str) -> Result<Self, String> {
-		let lower = value.to_lowercase();
-		match lower.as_str() {
-			"raw"                 => Ok(OutputFormat::Raw),
-			"hex" | "hexadecimal" => Ok(OutputFormat::Hexadecimal),
-			"dec" | "decimal"     => Ok(OutputFormat::Decimal),
-			_ => Err(format!("invalid output format, allowed values are: raw, hex or dec, got: {}", value)),
-		}
-	}
-}
-
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone)]
+#[derive(clap::ValueEnum)]
 enum SpiMode {
+	#[clap(name = "0")]
 	M0 = 0,
+	#[clap(name = "1")]
 	M1 = 1,
+	#[clap(name = "2")]
 	M2 = 2,
+	#[clap(name = "3")]
 	M3 = 3,
 }
 
 impl SpiMode {
 	fn flags(&self) -> SpiModeFlags {
 		match *self {
-			SpiMode::M0 => SpiModeFlags::SPI_MODE_0,
-			SpiMode::M1 => SpiModeFlags::SPI_MODE_1,
-			SpiMode::M2 => SpiModeFlags::SPI_MODE_2,
-			SpiMode::M3 => SpiModeFlags::SPI_MODE_3,
-		}
-	}
-}
-
-impl std::str::FromStr for SpiMode {
-	type Err = String;
-
-	fn from_str(value: &str) -> Result<Self, String> {
-		match value {
-			"0" => Ok(SpiMode::M0),
-			"1" => Ok(SpiMode::M1),
-			"2" => Ok(SpiMode::M2),
-			"3" => Ok(SpiMode::M3),
-			_ => Err(format!("invalid output format, allowed values are: raw, hex or dec, got: {}", value)),
+			Self::M0 => SpiModeFlags::SPI_MODE_0,
+			Self::M1 => SpiModeFlags::SPI_MODE_1,
+			Self::M2 => SpiModeFlags::SPI_MODE_2,
+			Self::M3 => SpiModeFlags::SPI_MODE_3,
 		}
 	}
 }
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone)]
+#[derive(clap::ValueEnum)]
 enum ChipSelect {
 	ActiveLow,
 	ActiveHigh,
@@ -107,97 +90,86 @@ impl ChipSelect {
 	}
 }
 
-impl std::str::FromStr for ChipSelect {
-	type Err = String;
-
-	fn from_str(value: &str) -> Result<Self, String> {
-		match value.to_lowercase().as_str() {
-			"active-low"  => Ok(ChipSelect::ActiveLow),
-			"active-high" => Ok(ChipSelect::ActiveHigh),
-			"disabled"    => Ok(ChipSelect::Disabled),
-			_ => Err(format!("invalid chip select mode, allowed values are: active-low, active-high or disabled, got: {}", value)),
-		}
-	}
-}
-
 impl std::fmt::Display for ChipSelect {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
-			ChipSelect::ActiveLow  => write!(f, "active low"),
-			ChipSelect::ActiveHigh => write!(f, "active high"),
+			ChipSelect::ActiveLow  => write!(f, "active-low"),
+			ChipSelect::ActiveHigh => write!(f, "active-high"),
 			ChipSelect::Disabled   => write!(f, "disabled"),
 		}
 	}
 }
 
-#[derive(StructOpt)]
-#[structopt(author = "Fusion Engineering")]
-#[structopt(setting = structopt::clap::AppSettings::ColoredHelp)]
-#[structopt(setting = structopt::clap::AppSettings::DeriveDisplayOrder)]
+#[derive(clap::Parser)]
+#[clap(author = "Fusion Engineering")]
 struct Options {
 	/// The spidev to open.
-	#[structopt(value_name = "SPIDEV")]
+	#[clap(value_name = "SPIDEV")]
 	spidev: PathBuf,
 
 	/// Read input from a file, or - for standard input.
-	#[structopt(long = "in", short = "i")]
-	#[structopt(value_name = "PATH")]
-	#[structopt(default_value = "-")]
+	#[clap(long = "in", short)]
+	#[clap(value_name = "PATH")]
+	#[clap(default_value = "-")]
 	input: PathBuf,
 
 	/// Write output to a file, or - for standard output.
-	#[structopt(long = "out", short = "o")]
-	#[structopt(value_name = "PATH")]
-	#[structopt(default_value = "-")]
+	#[clap(long = "out", short)]
+	#[clap(value_name = "PATH")]
+	#[clap(default_value = "-")]
 	output: PathBuf,
 
 	/// The speed in Hz for the SPI transaction.
-	#[structopt(long = "speed", short = "s")]
-	#[structopt(value_name = "HZ")]
-	#[structopt(default_value = "1000000")]
+	#[clap(long, short)]
+	#[clap(value_name = "HZ")]
+	#[clap(default_value = "1000000")]
 	speed: u32,
 
 	/// Repeat the transaction COUNT times,
-	/// The speed in Hz for the SPI transaction.
-	#[structopt(long = "repeat", short = "r")]
-	#[structopt(value_name = "COUNT")]
-	#[structopt(default_value = "1")]
+	#[clap(long, short)]
+	#[clap(value_name = "COUNT")]
+	#[clap(default_value = "1")]
 	repeat: usize,
 
 	/// Print the response in the given format: raw, hex[adecimal] or dec[imal].
+	///
 	/// If not specified, the output format depends on whether output if going to a TTY.
 	/// If it is, hex is used by default, otherwise raw is used.
-	#[structopt(long = "format", short = "f")]
+	#[clap(long, short)]
 	format: Option<OutputFormat>,
 
 	/// SPI mode to use: 0, 1, 2 or 3.
-	#[structopt(long = "mode")]
-	#[structopt(value_name = "MODE")]
-	#[structopt(default_value = "0")]
+	#[clap(long)]
+	#[clap(value_enum)]
+	#[clap(value_name = "MODE")]
+	#[clap(default_value = "0")]
 	mode: SpiMode,
 
 	/// Chip select mode: active-low, active-high or disabled.
-	#[structopt(long = "chip-select")]
-	#[structopt(default_value = "active-low")]
+	#[clap(long)]
+	#[clap(value_enum)]
+	#[clap(default_value = "active-low")]
 	chip_select: ChipSelect,
 
 	/// Bits per word for the SPI transaction.
-	#[structopt(long = "bits")]
-	#[structopt(value_name = "N")]
-	#[structopt(default_value = "8")]
+	#[clap(long = "bits")]
+	#[clap(value_enum)]
+	#[clap(value_name = "N")]
+	#[clap(default_value = "8")]
 	bits_per_word: u8,
 
 	/// Delay in microseconds after enabling the chip select line before sending data.
-	#[structopt(long = "pre-delay")]
-	#[structopt(value_name = "MICROSECONDS")]
+	#[clap(long)]
+	#[clap(value_name = "MICROSECONDS")]
 	pre_delay: Option<u16>,
 }
 
 fn main() {
-	do_main(Options::from_args()).unwrap_or_else(|error| {
-		eprintln!("Error: {}", error);
-		std::process::exit(1);
-	});
+	do_main(clap::Parser::parse())
+		.unwrap_or_else(|error| {
+			eprintln!("Error: {}", error);
+			std::process::exit(1);
+		});
 }
 
 fn do_main(options: Options) -> Result<(), String> {

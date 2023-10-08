@@ -14,8 +14,8 @@ categories = ["command-line-utilities", "embedded"]
 
 [dependencies]
 spidev = "0.6"
-structopt = "0.3.26"
 libc = "0.2.149"
+clap = { version = "4.4.6", features = ["derive"] }
 
 [badges]
 travis-ci = { repository = "fusion-engineering/spicat", branch = "master" }
